@@ -1,66 +1,95 @@
 package code.rss
 
-import net.liftweb.http.S
-import net.liftweb.http.rest.RestHelper
-import dispatch._
-import Defaults._
-import net.liftweb.common.Full
-import net.liftweb.http.XmlResponse
-import net.liftweb.http.PlainTextResponse
-import sun.net.www.content.text.PlainTextInputStream
-import scala.xml.XML
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt
 import scala.xml.Elem
 import scala.xml.Node
-import scala.xml.transform.RuleTransformer
 import scala.xml.transform.RewriteRule
-import net.liftweb.util.HttpHelpers
-import net.liftweb.util.Helpers
-import net.liftweb.http.NotFoundResponse
-import net.liftweb.http.RedirectResponse
+import scala.xml.transform.RuleTransformer
+import dispatch.Defaults.executor
+import dispatch.Future
+import dispatch.Http
+import dispatch.as
+import dispatch.enrichFuture
+import dispatch.implyRequestHandlerTuple
+import dispatch.url
+import net.liftweb.http.S
+import net.liftweb.http.rest.RestHelper
+import net.liftweb.common.Logger
+import scala.xml.Attribute
 
-object infoq extends RestHelper {
+object infoq extends RestHelper with Logger {
+  serve { 
+    case "rss" :: "video" :: Nil Get req =>
+      val req = httpRequest("http://www.infoq.com/feed/presentations")
+      val response = req()
+       
+      val itemUrls = getItemUrls(response)
+      val itemPagesFut = itemUrls map httpRequest2
+      val itemPagesFutAll = Future.sequence(itemPagesFut)
+      val itemPages = Await.result(itemPagesFutAll, 30.seconds)
+      val videoUrls = itemPages map getVideoUrl
+      val thumbnailUrls = itemPages map getThumbnail
+
+      val enclosureRule = new AddEnclosure(
+          (itemUrls zip videoUrls).toMap,
+          (itemUrls zip thumbnailUrls).toMap)
+      val newResponse = new RuleTransformer(enclosureRule).transform(response).head
+      newResponse
+  }
+
   def httpRequest(uri: String): Future[Elem] = {
     val svc = url(uri)
     Http(svc OK as.xml.Elem)
   }
-
+  
   def httpRequest2(uri: String): Future[String] = {
     val svc = url(uri) <:< Map("User-Agent" -> "Mozilla/5.0(iPad; U; CPU iPhone OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10 (KHTML, like Gecko) Version/4.0.4 Mobile/7B314 Safari/531.21.10")
     Http(svc OK as.String)
   }
     
-  class AddEnclosure(hostName: String) extends RewriteRule {
+  class AddEnclosure(videoUrls: Map[String, Option[String]], thumbNailUrls: Map[String, Option[String]]) extends RewriteRule {
 	override def transform(node: Node): Seq[Node] = {
 	  node match {
 	    case <item>{children @ _*}</item> =>
-	        val link = children collect {case <link>{link}</link> => {link}}
-	        val url = hostName + Helpers.urlEncode(link.head.text)
-	        <item>{children ++ <enclosure url={url} type="video/mp4"/>}</item>
+	        val linkNode = children collect {case <link>{link}</link> => {link}}
+	        val link = linkNode.head.text
+	        val videoUrl = videoUrls get link
+	        val thumbnailUrl = thumbNailUrls get link
+	        val vidTag = videoUrl match {
+	          case Some(Some(url)) => <enclosure url={url} type="video/mp4"/>
+	          case _ => Nil
+	        }
+	        val thumbnailTag = thumbnailUrl match {
+	          case Some(Some(url)) => <media:thumbnail url={url}/>
+	          case _ => Nil
+	        }
+	        <item>{children ++ vidTag}</item>
 	    case other => other
 	  }
 	}
   }
   
-  serve { 
-    case "rss" :: "video" :: Nil Get req =>
-      val req = httpRequest("http://www.infoq.com/feed/presentations")
-      val response = req()
-      val enclosureRule = new AddEnclosure("http://" + S.hostName + ":8080/mp4/")
-      val newResponse = new RuleTransformer(enclosureRule).transform(response).head
-      newResponse
-      
-    case "mp4" :: url Get req =>
-      val req = httpRequest2(url.head)
-      val response = req()
-      val vidRegex = """(?s)<video poster="(.*?)".*?<source src="(.*?)"""".r
-      val matches = vidRegex findFirstMatchIn response
-      val src = for {
-        m <- matches
-      } yield m.group(2)
-      
-      src match {
-        case Some(url) => RedirectResponse(url)
-        case _ => NotFoundResponse("Cannot find video")
-      }
+  def getItemUrls(rssFeed: Elem): Seq[String] = {
+    rssFeed \ "channel" \ "item" \ "link" map (_.text)
   }
+  
+  def getVideoUrl(page: String): Option[String] = {
+    val vidRegex = """(?s)<video poster="(.*?)".*?<source src="(.*?)"""".r
+    val matches = vidRegex findFirstMatchIn page
+    matches match {
+      case Some(url) => Some(url.group(2))
+      case _ => None
+    }
+  }
+  
+  def getThumbnail(page: String): Option[String] = {
+    val vidRegex = """(?s)var slides = new Array\('(.*?)'""".r
+    val matches = vidRegex findFirstMatchIn page
+    matches match {
+      case Some(url) => Some("http://www.infoq.com" + url.group(1))
+      case _ => None
+    }
+  }
+
 }
