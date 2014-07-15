@@ -17,25 +17,27 @@ import net.liftweb.http.S
 import net.liftweb.http.rest.RestHelper
 import net.liftweb.common.Logger
 import scala.xml.Attribute
+import net.liftweb.http.rest.RestContinuation
 
 object infoq extends RestHelper with Logger {
   serve { 
     case "rss" :: "video" :: Nil Get req =>
       val req = httpRequest("http://www.infoq.com/feed/presentations")
-      val response = req()
-       
-      val itemUrls = getItemUrls(response)
-      val itemPagesFut = itemUrls map httpRequest2
-      val itemPagesFutAll = Future.sequence(itemPagesFut)
-      val itemPages = Await.result(itemPagesFutAll, 30.seconds)
-      val videoUrls = itemPages map getVideoUrl
-      val thumbnailUrls = itemPages map getThumbnail
-
-      val enclosureRule = new AddEnclosure(
-          (itemUrls zip videoUrls).toMap,
-          (itemUrls zip thumbnailUrls).toMap)
-      val newResponse = new RuleTransformer(enclosureRule).transform(response).head
-      newResponse
+      val newRssFut = for {
+          response <- req
+          itemUrls = getItemUrls(response)
+          itemPagesFut = itemUrls map httpRequest2
+          itemPagesFutAll = Future.sequence(itemPagesFut)
+          itemPages <- itemPagesFutAll
+          videoUrls = itemPages map getVideoUrl
+          thumbnailUrls = itemPages map getThumbnail
+          enclosureRule = new AddEnclosure(
+	          (itemUrls zip videoUrls).toMap,
+	          (itemUrls zip thumbnailUrls).toMap)
+          newRssFut = new RuleTransformer(enclosureRule).transform(response).head
+      } yield newRssFut
+      
+      RestContinuation.async(reply => for (newRss <- newRssFut) yield reply(newRss))
   }
 
   def httpRequest(uri: String): Future[Elem] = {
@@ -91,5 +93,4 @@ object infoq extends RestHelper with Logger {
       case _ => None
     }
   }
-
 }
