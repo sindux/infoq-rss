@@ -39,7 +39,9 @@ object infoq extends RestHelper {
   }
     
   class AddEnclosure(videoUrls: Map[String, Option[String]], thumbNailUrls: Map[String, Option[String]]) extends RewriteRule {
-	override def transform(node: Node): Seq[Node] = node match {
+    override def transform(node: Node): Seq[Node] = node match {
+      case e: Elem if e.label == "rss" =>
+        e % Attribute("xmlns", "media", "http://search.yahoo.com/mrss/", Null)
       case <item>{children @ _*}</item> =>
 	    val linkNode = children collect {case <link>{link}</link> => {link}}
 	    val link = linkNode.head.text
