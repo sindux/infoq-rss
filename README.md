@@ -13,13 +13,15 @@ However, if you visit it using an iPad, they'd actually present the mp4 file in 
 This small app will act as a proxy for infoq RSS feed and add the needed enclosure and media:thumbnail tags
 for your podcast app to consume.
 
-I've been learning Scala these last few months, so I took this as a challenge to see how well Scala could solve this.
-And I'm very happy with the result so far. It's very concise, it's asynchronous and will request the pages parallelly,
+I've been learning Scala these last few months, so I took this as a challenge to see how well I could use Scala to solve this.
+And I'm very happy with the result so far. It's very concise, it's asynchronous and will request the pages concurrently,
 and the code is fun to write and maintain. The main code is just in this
 [1 file](https://github.com/sindux/infoq-rss/blob/master/src/main/scala/code/rss/infoq.scala)
 
 I used [LiftWeb](http://liftweb.net/) to build the app, although I could have used a more lightweight framework.
 
-To start the program, you can clone the repo, start sbt, and connect your podcast to http://yourmachine:8080/video/rss.
+To start the program, you can clone the repo, start sbt, type container:start, and connect your podcast to http://yourmachine:8080/video/rss.
+Alternatively, I deployed this to [CloudBees](http://infoq.sindux.cloudbees.net/rss/video)
+using their free allowance (the instance gets hibernated after 2 hours of no activity). Please feel free to use it gently :-).
 
 Enjoy!

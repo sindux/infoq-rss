@@ -31,7 +31,7 @@ object infoq extends RestHelper {
       RestContinuation.async(reply => newRssFut map (reply(_)))
   }
 
-  val ipadUA = Map("User-Agent" -> "Mozilla/5.0(iPad; U; CPU iPhone OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10 (KHTML, like Gecko) Version/4.0.4 Mobile/7B314 Safari/531.21.10")
+  val ipadUA = Map("User-Agent" -> "Mozilla/5.0 (iPad; CPU OS 7_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/7.0 Mobile/11A465 Safari/9537.53")
   
   def httpRequest[T](retType: Response => T)(uri: String): Future[T] = {
     val svc = url(uri) <:< ipadUA
