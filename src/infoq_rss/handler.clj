@@ -4,8 +4,9 @@
             [net.cgrand.enlive-html :refer [xml-resource html-resource select at
                                             text html append do-> emit*
                                             transformation content] :as h]
-            [org.httpkit.client :as http])
-  (:use org.httpkit.server))
+            [org.httpkit.client :as http]
+            [org.httpkit.server :refer [run-server]])
+  (:gen-class))
 
 (def ipad-ua
   {:user-agent "Mozilla/5.0 (iPad; CPU OS 9_0_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13A404 Safari/601.1"})
@@ -69,7 +70,9 @@
 (defroutes all-routes
   (GET "/infoq/rss" [] (infoq-rss)))
 
-(run-server #'all-routes {:port 8080})
+(defn -main [& args]
+  (run-server #'all-routes {:port 8080}))
+
 
 (comment
   (def rss (-> (http-get "http://www.infoq.com/feed/presentations")
