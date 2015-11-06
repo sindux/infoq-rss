@@ -21,7 +21,7 @@
 (defn- scrape [html-page]
   (let [page (html-resource (java.io.StringReader. html-page))]
     {:vid-url (str "http:" (-> (select-1 page [:video :source]) :attrs :src))
-     :vid-length (select-1 page [:.videolength2 text])
+     :duration (select-1 page [:.videolength2 text])
      :pdf (let [pdf (select-1 page [:#pdfForm])
                 filename (select-1 pdf [:input])]
             (str "http://www.infoq.com" (-> pdf :attrs :action) "?"
@@ -31,13 +31,16 @@
 (defn- mod-desc [desc detail]
   (let [snip (h/html-snippet desc)
         imgs (h/select snip [:img])]
-    (emit* (concat (h/html [:a {:href (:pdf detail)} "Download PDF"]
-                           [:p (str "Length: " (:vid-length detail))])
+    (emit* (concat (h/html [:a {:href (:pdf detail)}
+                            "Download PDF (Please login from browser first)"])
                    (at snip [:img] nil)  ;; move <img> tag to the end
                    imgs))))
 
 (defn- enrich [rss-xml links-details]
-  (at rss-xml [:channel :item]
+  (at rss-xml
+      [:rss] (h/set-attr "xmlns:media" "http://search.yahoo.com/mrss/"
+                         "xmlns:itunes" "http://www.itunes.com/dtds/podcast-1.0.dtd")
+      [:channel :item]
       (fn [node]
         (let [link (select-1 node [:link text])
               detail (links-details link)
@@ -48,8 +51,10 @@
                                                :type "video/mp4"}]))
               upd-desc (transformation [:description] (content desc))
               append-thumbnail (append (html [:media:thumbnail
-                                              {:url (:thumbnail detail)}]))]
-          ((do-> append-enclosure upd-desc #_append-thumbnail) node)))))
+                                              {:url (:thumbnail detail)}]))
+              append-duration (append (html [:itunes:duration
+                                             (:duration detail)]))]
+          ((do-> append-enclosure upd-desc append-thumbnail append-duration) node)))))
 
 (defn- infoq-rss []
   (a/<!!
@@ -64,7 +69,7 @@
              links-details (zipmap links links-scraped)
              final (enrich rss links-details)]
          {:status 200
-          :headers {"Content-Type" "application/xml"}
+          :headers {"Content-Type" "application/rss+xml"}
           :body (emit* final)}))))
 
 (defroutes all-routes
@@ -82,5 +87,4 @@
   (def page-1 (:body (a/<!! (http-get (first links)))))
   (def page-1-detail (scrape page-1))
   (def links-details (zipmap (take 1 links) [page-1-detail]))
-  (apply str (emit* (enrich rss links-details)))
-  )
+  (apply str (emit* (enrich rss links-details))))
