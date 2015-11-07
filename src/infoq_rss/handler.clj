@@ -1,5 +1,5 @@
 (ns infoq-rss.handler
-  (:require [clojure.core.async :refer [promise-chan go <! >!] :as a]
+  (:require [clojure.core.async :refer [promise-chan go <! >! go-loop timeout] :as a]
             [compojure.core :refer [defroutes GET]]
             [net.cgrand.enlive-html :refer [xml-resource html-resource select at
                                             text html append do-> emit*
@@ -11,10 +11,35 @@
 (def ipad-ua
   {:user-agent "Mozilla/5.0 (iPad; CPU OS 9_0_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13A404 Safari/601.1"})
 
-(defn- http-get [url]
+(defn time-evictor [expiry-ms check-interval-ms]
+  (fn [mem]
+    (go-loop []
+      (<! (timeout check-interval-ms))
+      (swap! mem #(apply dissoc % (for [[k {:keys [time]}] %
+                                        :when (>= (System/currentTimeMillis)
+                                                  (+ time expiry-ms))]
+                                    k)))
+      (recur))))
+
+(defn memoize-async
+  "Like memoize but for async function and with evictor."
+  [evictor f]
+  (let [mem (atom {})]
+    (evictor mem)
+    (fn [& args]
+      (if-let [e (find @mem args)]
+        (go (:result (val e)))
+        (go (let [ret (<! (apply f args))]
+              (swap! mem assoc args {:result ret :time (System/currentTimeMillis)})
+              ret))))))
+
+(defn- http-get* [url]
   (let [ch (promise-chan)]
     (http/get url ipad-ua #(go (>! ch %)))
     ch))
+
+(def hour 3600000)
+(def http-get (memoize-async (time-evictor (* 4 hour) (* 1 hour)) http-get*))
 
 (def select-1 (comp first select))
 
@@ -87,4 +112,24 @@
   (def page-1 (:body (a/<!! (http-get (first links)))))
   (def page-1-detail (scrape page-1))
   (def links-details (zipmap (take 1 links) [page-1-detail]))
-  (apply str (emit* (enrich rss links-details))))
+  (apply str (emit* (enrich rss links-details)))
+
+  ;; time-evictor test
+  (let [a (atom {})]
+    ((time-evictor 2000 1000) a)  ;; expire after 2 secs; check every 1 sec
+    (go-loop [i 0]
+      (when (< i 10)
+        (swap! a assoc i {:res i :time (System/currentTimeMillis)}))
+      (println i @a)
+      (<! (timeout 1000))
+      (when (not-empty @a)
+        (recur (inc i)))))
+
+  ;; memoize-async test
+  (defn slow-fn* [n] (go (<! (timeout 1000)) n))
+  (def slow-fn (memoize-async (time-evictor 3000 1000) slow-fn*))
+  (go-loop [i 0]
+    (println i (time (<! (slow-fn -1))))
+    (<! (timeout 1000))
+    (when (< i 10)
+      (recur (inc i)))))
