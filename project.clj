@@ -8,5 +8,7 @@
                  [enlive "1.1.6"]]
   :plugins [[lein-ring "0.9.7"]]
   :ring {:handler infoq-rss.handler/app}
+  :min-lein-version "2.0.0"
+  :uberjar-name "infoq-rss-standalone.jar"
   :profiles {:uberjar {:main infoq-rss.handler
                        :aot :all}})

@@ -39,9 +39,15 @@
     ch))
 
 (def hour 3600000)
-(def http-get (memoize-async (time-evictor (* 4 hour) (* 1 hour)) http-get*))
+(def
+  ^{:arglists '([url])}
+  http-get
+  (memoize-async (time-evictor (* 20 hour) (* 1 hour)) http-get*))
 
-(def select-1 (comp first select))
+(def
+  ^{:arglists '([node selectors])}
+  select-1
+  (comp first select))
 
 (defn- scrape [html-page]
   (let [page (html-resource (java.io.StringReader. html-page))]
@@ -94,15 +100,15 @@
              links-details (zipmap links links-scraped)
              final (enrich rss links-details)]
          {:status 200
-          :headers {"Content-Type" "application/rss+xml"}
+          :headers {"Content-Type" "application/xml"}
           :body (emit* final)}))))
 
 (defroutes all-routes
-  (GET "/infoq/rss" [] (infoq-rss)))
+  (GET "/infoq/video/rss" [] (infoq-rss)))
 
 (defn -main [& args]
-  (run-server #'all-routes {:port 8080}))
-
+  (println "Starting app...")
+  (run-server #'all-routes {:port (or (Integer. (System/getenv "PORT")) 5000)}))
 
 (comment
   (def rss (-> (http-get "http://www.infoq.com/feed/presentations")
